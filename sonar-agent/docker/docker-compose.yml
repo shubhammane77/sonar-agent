@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  sonar-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: sonar-agent
+    volumes:
+      # Mount your repository for file access
+      - ${REPO_ROOT:-/path/to/your/repo}:/workspace:rw
+      # Mount environment file
+      - ${PWD}/.env:/app/.env:ro
+    environment:
+      - REPO_ROOT=/workspace
+    working_dir: /app
+    command: ["--dry-run"]
+    
+  # Optional: SonarQube service for local development
+  sonarqube:
+    image: sonarqube:community
+    container_name: sonarqube-local
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    profiles:
+      - dev
+
+volumes:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:

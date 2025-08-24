@@ -1,0 +1,30 @@
+# Environment files
+.env
+*.env
+!.env.example
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Sonar Agent backups
+.sonar-agent-backups
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
