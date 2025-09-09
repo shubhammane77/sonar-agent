@@ -95,6 +95,7 @@ class SonarAgentApp:
             'ai_provider': get_config_value('AI_PROVIDER', getattr(args, 'ai_provider', None), env_vars),
             'ai_api_key': get_config_value('AI_API_KEY', getattr(args, 'ai_api_key', None), env_vars),
             'ai_model': get_config_value('AI_MODEL', getattr(args, 'ai_model', None), env_vars),
+            'ai_custom_url': get_config_value('AI_CUSTOM_URL', getattr(args, 'ai_custom_url', None), env_vars),
             
             # GitLab configuration
             'gitlab_url': get_config_value('GITLAB_URL', getattr(args, 'gitlab_url', None), env_vars),
@@ -144,7 +145,8 @@ class SonarAgentApp:
             self.ai_fixer = AICodeFixer(
                 config['ai_provider'], 
                 config['ai_api_key'], 
-                config['ai_model']
+                config['ai_model'],
+                config['ai_custom_url']
             )
         else:
             print("Warning: No AI API key provided. Using mock responses.")
@@ -502,6 +504,8 @@ def main():
                        help='AI API key (or set AI_API_KEY)')
     parser.add_argument('--ai-model',
                        help='AI model to use (or set AI_MODEL)')
+    parser.add_argument('--ai-custom-url',
+                       help='Custom API URL for AI provider (or set AI_CUSTOM_URL)')
     
     # GitLab configuration (optional if in env)
     parser.add_argument('--gitlab-url',

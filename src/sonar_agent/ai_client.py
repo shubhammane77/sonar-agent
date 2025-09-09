@@ -68,10 +68,17 @@ class CostCalculator:
 class AICodeFixer:
     """Handles AI API integration for fixing code smells with cost tracking."""
     
-    def __init__(self, provider: str = "mistral", api_key: str = None, model: str = None):
+    # Default API endpoints
+    DEFAULT_ENDPOINTS = {
+        AIProvider.MISTRAL: "https://api.mistral.ai/v1",
+        AIProvider.GEMINI: "https://generativelanguage.googleapis.com/v1"
+    }
+    
+    def __init__(self, provider: str = "mistral", api_key: str = None, model: str = None, custom_url: str = None):
         self.provider = AIProvider(provider.lower())
         self.api_key = api_key
         self.mock_mode = self.provider == AIProvider.MOCK or not api_key
+        self.custom_url = custom_url
         
         # Set default models based on provider
         if self.provider == AIProvider.MISTRAL:
@@ -90,20 +97,42 @@ class AICodeFixer:
         if self.mock_mode:
             return None
         
-        if self.provider == AIProvider.MISTRAL:
-            return ChatMistralAI(
-                api_key=self.api_key,
-                model=self.model,
-                temperature=0.1,
-                max_tokens=4000
-            )
-        elif self.provider == AIProvider.GEMINI:
-            return ChatGoogleGenerativeAI(
-                google_api_key=self.api_key,
-                model=self.model,
-                temperature=0.1,
-                max_output_tokens=4000
-            )
+        try:
+            if self.provider == AIProvider.MISTRAL:
+                # Use custom URL if provided and not empty, otherwise use default
+                api_url = self.custom_url if self.custom_url and self.custom_url.strip() else self.DEFAULT_ENDPOINTS[AIProvider.MISTRAL]
+                print(f"Using Mistral API URL: {api_url}")
+                return ChatMistralAI(
+                    api_key=self.api_key,
+                    model=self.model,
+                    temperature=0.1,
+                    max_tokens=4000,
+                    mistral_api_url=api_url
+                )
+            elif self.provider == AIProvider.GEMINI:
+                # For Gemini, handle custom URL if provided and not empty
+                if self.custom_url and self.custom_url.strip():
+                    print(f"Using custom Gemini API URL: {self.custom_url}")
+                    return ChatGoogleGenerativeAI(
+                        google_api_key=self.api_key,
+                        model=self.model,
+                        temperature=0.1,
+                        max_output_tokens=4000,
+                        endpoint=self.custom_url
+                    )
+                else:
+                    print(f"Using default Gemini API URL: {self.DEFAULT_ENDPOINTS[AIProvider.GEMINI]}")
+                    return ChatGoogleGenerativeAI(
+                        google_api_key=self.api_key,
+                        model=self.model,
+                        temperature=0.1,
+                        max_output_tokens=4000
+                    )
+        except Exception as e:
+            print(f"Error initializing AI client: {e}")
+            print("Falling back to mock mode")
+            self.mock_mode = True
+            return None
         
         return None
     
