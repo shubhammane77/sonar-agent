@@ -51,10 +51,9 @@ class GitHubClient:
     def get_file_content(self, file_path: str, branch: str = 'main') -> Optional[str]:
         """Get file content from GitHub."""
         url = f"{self.base_url}/repos/{self.repo_owner}/{self.repo_name}/contents/{file_path}"
-        params = {'ref': branch}
         
         try:
-            response = self.session.get(url, params=params)
+            response = self.session.get(url)
             response.raise_for_status()
             
             data = response.json()
