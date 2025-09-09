@@ -3,11 +3,12 @@ GitLab API client for batch commits and project operations.
 """
 
 import base64
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union, Any
 from dataclasses import dataclass
 from datetime import datetime
 
-import requests
+import gitlab
+from gitlab.v4.objects import Project
 
 
 @dataclass
@@ -29,67 +30,61 @@ class CommitResult:
 
 
 class GitLabClient:
-    """Client for interacting with GitLab API."""
+    """Client for interacting with GitLab API using python-gitlab library."""
     
     def __init__(self, base_url: str, token: str, project_id: str):
         self.base_url = base_url.rstrip('/')
         self.token = token
         self.project_id = project_id
-        self.session = requests.Session()
-        self.session.headers.update({
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/json'
-        })
+        
+        # Initialize the GitLab client
+        self.gl = gitlab.Gitlab(url=self.base_url, private_token=token, ssl_verify=False)
+        
+        # Get the project object
+        try:
+            self.project = self.gl.projects.get(self.project_id)
+        except gitlab.exceptions.GitlabGetError as e:
+            print(f"Error connecting to GitLab project: {e}")
+            self.project = None
     
     def get_project_info(self) -> Optional[Dict]:
         """Get project information from GitLab."""
-        url = f"{self.base_url}/api/v4/projects/{self.project_id}"
-        
         try:
-            response = self.session.get(url)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
+            if not self.project:
+                self.project = self.gl.projects.get(self.project_id)
+            
+            # Convert project object to dictionary
+            return {
+                'id': self.project.id,
+                'name': self.project.name,
+                'description': self.project.description,
+                'web_url': self.project.web_url,
+                'default_branch': self.project.default_branch,
+                'visibility': self.project.visibility,
+                'path_with_namespace': self.project.path_with_namespace
+            }
+        except gitlab.exceptions.GitlabError as e:
             print(f"Error fetching project info: {e}")
             return None
     
     def get_file_content(self, file_path: str, ref: str = "main") -> Optional[str]:
         """Get file content from GitLab repository."""
-        # URL encode the file path
-        encoded_path = requests.utils.quote(file_path, safe='')
-        url = f"{self.base_url}/api/v4/projects/{self.project_id}/repository/files/{encoded_path}"
-        
-        params = {'ref': ref}
-        
         try:
-            response = self.session.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
+            f = self.project.files.get(file_path=file_path, ref=ref)
             
             # Decode base64 content
-            if data.get('encoding') == 'base64':
-                return base64.b64decode(data['content']).decode('utf-8')
-            else:
-                return data.get('content', '')
+            return base64.b64decode(f.content).decode('utf-8')
                 
-        except requests.RequestException as e:
+        except gitlab.exceptions.GitlabError as e:
             print(f"Error fetching file {file_path}: {e}")
             return None
     
     def create_branch(self, branch_name: str, ref: str = "main") -> bool:
         """Create a new branch in GitLab."""
-        url = f"{self.base_url}/api/v4/projects/{self.project_id}/repository/branches"
-        
-        data = {
-            'branch': branch_name,
-            'ref': ref
-        }
-        
         try:
-            response = self.session.post(url, json=data)
-            response.raise_for_status()
+            self.project.branches.create({'branch': branch_name, 'ref': ref})
             return True
-        except requests.RequestException as e:
+        except gitlab.exceptions.GitlabError as e:
             print(f"Error creating branch {branch_name}: {e}")
             return False
     
@@ -97,8 +92,6 @@ class GitLabClient:
                     branch: str = "main", author_email: Optional[str] = None,
                     author_name: Optional[str] = None) -> CommitResult:
         """Commit multiple files in a single commit to GitLab."""
-        url = f"{self.base_url}/api/v4/projects/{self.project_id}/repository/commits"
-        
         # Prepare actions for each file
         actions = []
         for file in files:
@@ -126,53 +119,44 @@ class GitLabClient:
             commit_data['author_name'] = author_name
         
         try:
-            response = self.session.post(url, json=commit_data)
-            response.raise_for_status()
-            
-            result = response.json()
-            commit_id = result.get('id')
-            commit_url = result.get('web_url')
+            # Use the commits API to create a commit with multiple file actions
+            commit = self.project.commits.create(commit_data)
             
             return CommitResult(
                 success=True,
-                commit_id=commit_id,
-                commit_url=commit_url
+                commit_id=commit.get('id'),
+                commit_url=f"{self.base_url}/{self.project.path_with_namespace}/-/commit/{commit.get('id')}"
             )
             
-        except requests.RequestException as e:
+        except gitlab.exceptions.GitlabError as e:
             error_msg = f"Error committing to GitLab: {e}"
-            if hasattr(e, 'response') and e.response is not None:
-                try:
-                    error_detail = e.response.json()
-                    error_msg += f" - {error_detail}"
-                except:
-                    error_msg += f" - {e.response.text}"
-            
             return CommitResult(success=False, error=error_msg)
     
     def create_merge_request(self, source_branch: str, target_branch: str = "main",
                            title: str = None, description: str = None) -> Optional[Dict]:
         """Create a merge request in GitLab."""
-        url = f"{self.base_url}/api/v4/projects/{self.project_id}/merge_requests"
-        
         if not title:
             title = f"Sonar Agent: Code smell fixes from {source_branch}"
         
         if not description:
             description = "Automated code smell fixes generated by Sonar Agent"
         
-        data = {
-            'source_branch': source_branch,
-            'target_branch': target_branch,
-            'title': title,
-            'description': description
-        }
-        
         try:
-            response = self.session.post(url, json=data)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
+            mr = self.project.mergerequests.create({
+                'source_branch': source_branch,
+                'target_branch': target_branch,
+                'title': title,
+                'description': description
+            })
+            
+            # Convert to dictionary
+            return {
+                'id': mr.iid,
+                'web_url': mr.web_url,
+                'title': mr.title,
+                'state': mr.state
+            }
+        except gitlab.exceptions.GitlabError as e:
             print(f"Error creating merge request: {e}")
             return None
 

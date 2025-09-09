@@ -7,15 +7,10 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 
-try:
-    from langchain_mistralai import ChatMistralAI
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain.schema import HumanMessage, SystemMessage
-    from langchain.callbacks import get_openai_callback
-    import tiktoken
-    LANGCHAIN_AVAILABLE = True
-except ImportError:
-    LANGCHAIN_AVAILABLE = False
+from langchain_mistralai import ChatMistralAI
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.schema import HumanMessage, SystemMessage
+import tiktoken
 
 
 @dataclass
@@ -96,8 +91,6 @@ class AICodeFixer:
             return None
         
         if self.provider == AIProvider.MISTRAL:
-            if not LANGCHAIN_AVAILABLE:
-                raise ImportError("LangChain and Mistral packages not installed. Run: pip install langchain langchain-mistralai")
             return ChatMistralAI(
                 api_key=self.api_key,
                 model=self.model,
@@ -105,8 +98,6 @@ class AICodeFixer:
                 max_tokens=4000
             )
         elif self.provider == AIProvider.GEMINI:
-            if not LANGCHAIN_AVAILABLE:
-                raise ImportError("LangChain and Google Gemini packages not installed. Run: pip install langchain langchain-google-genai")
             return ChatGoogleGenerativeAI(
                 google_api_key=self.api_key,
                 model=self.model,
@@ -116,13 +107,13 @@ class AICodeFixer:
         
         return None
     
-    def fix_code_smell(self, smell, file_content: str) -> tuple[Optional[str], TokenUsage]:
+    def fix_code_smell(self, smell, file_content: str, prompt_template: str) -> tuple[Optional[str], TokenUsage]:
         """Send code smell to AI and get fixed version with usage tracking."""
         if self.mock_mode:
             return self._mock_ai_response(file_content, smell), TokenUsage()
         
         try:
-            prompt = self._create_prompt(smell, file_content)
+            prompt = self._create_prompt(smell, file_content, prompt_template)
             return self._call_ai(prompt)
             
         except Exception as e:
@@ -175,30 +166,40 @@ class AICodeFixer:
             # Fallback: rough approximation (4 chars per token)
             return len(text) // 4
     
-    def _create_prompt(self, smell, file_content: str) -> str:
+    def _create_prompt(self, smell, file_content: str, prompt_template: str) -> str:
         """Create a prompt for the AI to fix the code smell."""
-        return f"""
-Please fix the following code smell in this file:
+        print('prompt', smell.message)
+        print('prompt', file_content)
+        print('prompt', prompt_template)
+        prompt = prompt_template.format(
+            replace_code_smell_lines_here=smell.message,
+            replace_full_code_here=file_content
+            )
+        print('prompt', prompt)
+        return prompt
+#         return f"""
+# Please fix the following code smell in this file:
 
-**Issue Description:** {smell.message}
-**Rule:** {smell.rule}
-**Severity:** {smell.severity}
-**File:** {smell.file_path}
-**Lines:** {smell.line}
-**Estimated Effort:** {smell.debt_minutes}
+# **Issue Description:** {smell.message}
 
-**Current File Content:**
-```
-{file_content}
-```
+# **Current File line to change:**
+# ```
+# {line_content}
+# ```
 
-Instructions:
-1. Fix the code smell while preserving all existing functionality
-2. Follow best practices for the programming language
-3. Add comments if the fix needs explanation
-4. Return the ENTIRE updated file content
-5. Only send code
-"""
+# **Current File Content:**
+
+# ```
+# {file_content}
+# ```
+
+# Instructions:
+# 1. Fix the code smell while preserving all existing functionality
+# 2. Follow best practices for the programming language
+# 3. Add comments if the fix needs explanation
+# 4. Return the ENTIRE updated file content
+# 5. Only send code
+# """
     
     def _extract_updated_file(self, ai_response: str) -> Optional[str]:
         """Extract the updated file content from AI response."""

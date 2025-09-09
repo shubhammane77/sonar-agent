@@ -6,7 +6,7 @@ SonarQube API client for fetching code smells and issues.
 import requests
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
-
+from .rule_prompt_map import rule_prompt_map
 
 @dataclass
 class CodeSmell:
@@ -95,7 +95,7 @@ class SonarQubeClient:
             
             data = response.json()
             issues = data.get('issues', [])
-            
+            print('issuess')
             if self.debug:
                 print(f"   Found {len(issues)} issues")
                 if issues:
@@ -103,6 +103,7 @@ class SonarQubeClient:
             
             # Convert to CodeSmell objects
             code_smells = []
+
             for issue in issues:
                 try:
                     smell = CodeSmell.from_sonar_issue(issue)

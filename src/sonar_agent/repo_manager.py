@@ -150,3 +150,25 @@ class RepoManager:
         except Exception as e:
             print(f"Error cleaning up backups: {e}")
             return 0
+    
+    @staticmethod
+    def get_line_from_content(file_content: str, line_number: int) -> str:
+        """
+        Get a specific line of code from file content.
+
+        Args:
+            file_content (str): The full text content of the file.
+            line_number (int): The line number to fetch (1-indexed).
+
+        Returns:
+            str: The content of the line at the given line_number.
+
+        Raises:
+            ValueError: If the line number is out of range.
+        """
+        lines = file_content.splitlines()
+    
+        if line_number < 1 or line_number > len(lines):
+            raise ValueError(f"Line number {line_number} is out of range. File has {len(lines)} lines.")
+    
+        return lines[line_number - 1]
