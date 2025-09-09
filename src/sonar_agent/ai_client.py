@@ -107,7 +107,7 @@ class AICodeFixer:
                     model=self.model,
                     temperature=0.1,
                     max_tokens=4000,
-                    mistral_api_url=api_url
+                    endpoint=api_url
                 )
             elif self.provider == AIProvider.GEMINI:
                 # For Gemini, handle custom URL if provided and not empty
