@@ -257,7 +257,7 @@ class SonarAgentApp:
                 elif severity == 'BLOCKER':
                     # Handle BLOCKER severity logic here
                     pass
-                
+
                 else:
                     print(f"Unknown severity {severity} for rule {rule}, skipping...")
                     continue
@@ -542,7 +542,7 @@ def main():
                        help='GitLab access token (or set GITLAB_TOKEN)')
     parser.add_argument('--gitlab-project-id',
                        help='GitLab project ID (or set GITLAB_PROJECT_ID)')
-    parser.add_argument('--gitlab-branch', default='main',
+    parser.add_argument('--gitlab-branch', 
                        help='Target branch for commits (default: main, or set GITLAB_BRANCH)')
     parser.add_argument('--gitlab-batch-size', type=int, default=10,
                        help='Number of files per commit batch (default: 10, or set GITLAB_BATCH_SIZE)')
@@ -560,7 +560,7 @@ def main():
                        help='GitHub repository owner (or set GITHUB_REPO_OWNER)')
     parser.add_argument('--github-repo-name',
                        help='GitHub repository name (or set GITHUB_REPO_NAME)')
-    parser.add_argument('--github-branch', default='main',
+    parser.add_argument('--github-branch',
                        help='Target branch for commits (default: main, or set GITHUB_BRANCH)')
     parser.add_argument('--github-batch-size', type=int, default=10,
                        help='Number of files per commit batch (default: 10, or set GITHUB_BATCH_SIZE)')
