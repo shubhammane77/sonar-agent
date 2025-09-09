@@ -200,10 +200,11 @@ class AICodeFixer:
         print('prompt', smell.message)
         print('prompt', file_content)
         print('prompt', prompt_template)
-        prompt = prompt_template.format(
-            replace_code_smell_lines_here=smell.message,
-            replace_full_code_here=file_content
-            )
+        prompt = prompt_template.replace(
+            "{{replace_code_smell_lines_here}}", smell.message
+        ).replace(
+            "{{replace_full_code_here}}", file_content
+        )
         print('prompt', prompt)
         return prompt
 #         return f"""
