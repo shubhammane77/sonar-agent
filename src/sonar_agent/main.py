@@ -233,14 +233,42 @@ class SonarAgentApp:
             print(f"Lines: {smell.line}")
             print(f"Processing {smell.file_path}...")
             
-            # Get prompt for the rule
-            rule = smell.rule
-            number = int(rule.split(":S")[1])
-            prompt = rule_prompt_map.get('RSPEC-' + str(number))
+            # Get prompt for the rule based on severity
+            try:
+                rule = smell.rule
+                severity = smell.severity
+                
+                if severity == 'MINOR':
+                    if ":S" in rule:
+                        number = int(rule.split(":S")[1])
+                        prompt = rule_prompt_map.get('RSPEC-' + str(number))
+                    else:
+                        print(f"Rule {rule} does not contain ':S', skipping...")
+                        continue
+                
+                elif severity == 'MAJOR':
+                    # Handle MAJOR severity logic here
+                    pass
+                
+                elif severity == 'CRITICAL':
+                    # Handle CRITICAL severity logic here
+                    pass
+
+                elif severity == 'BLOCKER':
+                    # Handle BLOCKER severity logic here
+                    pass
+                
+                else:
+                    print(f"Unknown severity {severity} for rule {rule}, skipping...")
+                    continue
+                
+            except Exception as e:
+                print(f"Error processing rule {rule}: {e}, skipping...")
+                continue
+            
             if prompt is None:
                 print(f"No prompt found for rule {rule}, skipping...")
                 continue
-            
             # Get file content from Git client
             file_content = self._get_file_content(smell.file_path, config)
             if not file_content:
