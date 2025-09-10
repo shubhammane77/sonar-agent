@@ -127,6 +127,7 @@ class SonarAgentApp:
             'ai_api_key': get_config_value('AI_API_KEY', getattr(args, 'ai_api_key', None), env_vars),
             'ai_model': get_config_value('AI_MODEL', getattr(args, 'ai_model', None), env_vars),
             'ai_custom_url': get_config_value('AI_CUSTOM_URL', getattr(args, 'ai_custom_url', None), env_vars),
+            'ai_max_output_tokens': int(get_config_value('AI_MAX_OUTPUT_TOKENS', getattr(args, 'ai_max_output_tokens', None), env_vars) or '4000'),
             
             # GitLab configuration
             'gitlab_url': get_config_value('GITLAB_URL', getattr(args, 'gitlab_url', None), env_vars),
@@ -177,7 +178,8 @@ class SonarAgentApp:
                 config['ai_provider'], 
                 config['ai_api_key'], 
                 config['ai_model'],
-                config['ai_custom_url']
+                config['ai_custom_url'],
+                max_output_tokens=config['ai_max_output_tokens']
             )
         else:
             print("Warning: No AI API key provided. Using mock responses.")
@@ -595,6 +597,8 @@ def main():
                        help='AI model to use (or set AI_MODEL)')
     parser.add_argument('--ai-custom-url',
                        help='Custom API URL for AI provider (or set AI_CUSTOM_URL)')
+    parser.add_argument('--ai-max-output-tokens', type=int, default=4000,
+                       help='Maximum output tokens for AI model (default: 4000, or set AI_MAX_OUTPUT_TOKENS)')
     
     # GitLab configuration (optional if in env)
     parser.add_argument('--gitlab-url',

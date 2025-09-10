@@ -76,13 +76,14 @@ class AICodeFixer:
         AIProvider.GEMINI: "https://generativelanguage.googleapis.com/v1"
     }
     
-    def __init__(self, provider: str = "mistral", api_key: str = None, model: str = None, custom_url: str = None, max_retries: int = 3, base_delay: float = 1.0):
+    def __init__(self, provider: str = "mistral", api_key: str = None, model: str = None, custom_url: str = None, max_retries: int = 3, base_delay: float = 1.0, max_output_tokens: int = 4000):
         self.provider = AIProvider(provider.lower())
         self.api_key = api_key
         self.mock_mode = self.provider == AIProvider.MOCK or not api_key
         self.custom_url = custom_url
         self.max_retries = max_retries
         self.base_delay = base_delay
+        self.max_output_tokens = max_output_tokens
         
         # Set default models based on provider
         if self.provider == AIProvider.MISTRAL:
@@ -110,7 +111,7 @@ class AICodeFixer:
                     api_key=self.api_key,
                     model=self.model,
                     temperature=0.1,
-                    max_tokens=4000,
+                    max_tokens=self.max_output_tokens,
                     endpoint=api_url
                 )
             elif self.provider == AIProvider.GEMINI:
@@ -121,7 +122,7 @@ class AICodeFixer:
                         google_api_key=self.api_key,
                         model=self.model,
                         temperature=0.1,
-                        max_output_tokens=4000,
+                        max_output_tokens=self.max_output_tokens,
                         endpoint=self.custom_url
                     )
                 else:
@@ -130,7 +131,7 @@ class AICodeFixer:
                         google_api_key=self.api_key,
                         model=self.model,
                         temperature=0.1,
-                        max_output_tokens=4000
+                        max_output_tokens=self.max_output_tokens
                     )
         except Exception as e:
             print(f"Error initializing AI client: {e}")
@@ -145,8 +146,21 @@ class AICodeFixer:
         if self.mock_mode:
             return self._mock_ai_response(file_content, smell), TokenUsage()
         
+        # Check if file content exceeds output token limit
+        file_tokens = self._estimate_tokens(file_content)
+        if file_tokens > self.max_output_tokens:
+            print(f"⚠️  File {smell.file_path} is too large ({file_tokens} tokens) for model output limit ({self.max_output_tokens} tokens)")
+            return None, TokenUsage()
+        
         try:
             prompt = self._create_prompt(smell, file_content, prompt_template)
+            
+            # Also check total prompt size
+            prompt_tokens = self._estimate_tokens(prompt)
+            if prompt_tokens > (self.max_output_tokens * 2):  # Allow 2x for input vs output
+                print(f"⚠️  Prompt for {smell.file_path} is too large ({prompt_tokens} tokens)")
+                return None, TokenUsage()
+            
             return self._call_ai(prompt)
             
         except Exception as e:
