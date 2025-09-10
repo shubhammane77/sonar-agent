@@ -3,6 +3,8 @@ AI client for code smell fixing using LangChain with Mistral AI and cost trackin
 """
 
 import re
+import time
+import random
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -74,11 +76,13 @@ class AICodeFixer:
         AIProvider.GEMINI: "https://generativelanguage.googleapis.com/v1"
     }
     
-    def __init__(self, provider: str = "mistral", api_key: str = None, model: str = None, custom_url: str = None):
+    def __init__(self, provider: str = "mistral", api_key: str = None, model: str = None, custom_url: str = None, max_retries: int = 3, base_delay: float = 1.0):
         self.provider = AIProvider(provider.lower())
         self.api_key = api_key
         self.mock_mode = self.provider == AIProvider.MOCK or not api_key
         self.custom_url = custom_url
+        self.max_retries = max_retries
+        self.base_delay = base_delay
         
         # Set default models based on provider
         if self.provider == AIProvider.MISTRAL:
@@ -150,7 +154,7 @@ class AICodeFixer:
             return None, TokenUsage()
     
     def _call_ai(self, prompt: str) -> tuple[Optional[str], TokenUsage]:
-        """Call AI via LangChain."""
+        """Call AI via LangChain with retry logic and exponential backoff."""
         messages = [
             SystemMessage(content="You are an expert software engineer specializing in code quality improvements. Fix code smells while maintaining functionality."),
             HumanMessage(content=prompt)
@@ -159,30 +163,48 @@ class AICodeFixer:
         # Estimate token usage (rough approximation)
         prompt_tokens = self._estimate_tokens(prompt)
         
-        response = self.client.invoke(messages)
-        print('ai response', response)
-        completion_tokens = self._estimate_tokens(response.content)
+        last_exception = None
         
-        # Calculate cost
-        cost = self.cost_calculator.calculate_cost(
-            self.model, prompt_tokens, completion_tokens
-        )
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self.client.invoke(messages)
+                print('ai response', response)
+                completion_tokens = self._estimate_tokens(response.content)
+                
+                # Calculate cost
+                cost = self.cost_calculator.calculate_cost(
+                    self.model, prompt_tokens, completion_tokens
+                )
+                
+                usage = TokenUsage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=prompt_tokens + completion_tokens,
+                    cost_usd=cost
+                )
+                
+                # Update total usage
+                self.total_usage.prompt_tokens += usage.prompt_tokens
+                self.total_usage.completion_tokens += usage.completion_tokens
+                self.total_usage.total_tokens += usage.total_tokens
+                self.total_usage.cost_usd += usage.cost_usd
+                
+                fixed_content = self._extract_updated_file(response.content)
+                return fixed_content, usage
+                
+            except Exception as e:
+                last_exception = e
+                if attempt < self.max_retries:
+                    # Calculate delay with exponential backoff and jitter
+                    delay = self.base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    print(f"AI API call failed (attempt {attempt + 1}/{self.max_retries + 1}): {e}")
+                    print(f"Retrying in {delay:.2f} seconds...")
+                    time.sleep(delay)
+                else:
+                    print(f"AI API call failed after {self.max_retries + 1} attempts: {e}")
         
-        usage = TokenUsage(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=prompt_tokens + completion_tokens,
-            cost_usd=cost
-        )
-        
-        # Update total usage
-        self.total_usage.prompt_tokens += usage.prompt_tokens
-        self.total_usage.completion_tokens += usage.completion_tokens
-        self.total_usage.total_tokens += usage.total_tokens
-        self.total_usage.cost_usd += usage.cost_usd
-        
-        fixed_content = self._extract_updated_file(response.content)
-        return fixed_content, usage
+        # If all retries failed, return None with empty usage
+        return None, TokenUsage()
     
 
     def _estimate_tokens(self, text: str) -> int:

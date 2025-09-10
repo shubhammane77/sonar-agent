@@ -171,3 +171,20 @@ rule_prompt_map = {
     "RSPEC-101": "You are a senior Java engineer performing a surgical refactor to satisfy a specific Sonar rule.\n\nInput:\nRule Summary: Class names should comply with a naming convention\nDescription: Why is this an issue?\nShared naming conventions allow teams to collaborate efficiently.\nThis rule raises an issue when a class name does not match a provided regular expression.\nFor example, with the default provided regular expression\n^[A-Z][a-zA-Z0-9]*$\n, the class:\n```java\nclass my_class {...} // Noncompliant\n```\nshould be renamed to\n```java\nclass MyClass {...}\n```\n\nTask:\nAnalyze the provided noncompliant code file and refactor the code to align with sonar rule summary, description.\nPerform a surgical refactor preserving the original behavior to make the code compliant, keeping the refactor minimal.\n\nCode lines to refactor::\n```java\n{{replace_code_smell_lines_here}}\n```\n\nComplete Code file::\n```java\n{{replace_full_code_here}}\n```\nFormat your output as only refactored java Code file\n",
     "RSPEC-100": "You are a senior Java engineer performing a surgical refactor to satisfy a specific Sonar rule.\n\nInput:\nRule Summary: Method names should comply with a naming convention\nDescription: Why is this an issue?\nShared naming conventions allow teams to collaborate efficiently.\nThis rule raises an issue when a method name does not match a provided regular expression.\nFor example, with the default provided regular expression\n^[a-z][a-zA-Z0-9]*$\n, the method:\n```java\npublic int DoSomething(){...} // Noncompliant\n```\nshould be renamed to\n```java\npublic int doSomething(){...}\n```\nExceptions\nOverriding methods are excluded.\n```java\n@Override\npublic int Do_Something(){...} // Compliant by exception\n```\n\nTask:\nAnalyze the provided noncompliant code file and refactor the code to align with sonar rule summary, description.\nPerform a surgical refactor preserving the original behavior to make the code compliant, keeping the refactor minimal.\n\nCode lines to refactor::\n```java\n{{replace_code_smell_lines_here}}\n```\n\nComplete Code file::\n```java\n{{replace_full_code_here}}\n```\nFormat your output as only refactored java Code file\n"
 }
+# Default prompt for when no specific rule prompt is found
+rule_prompt_map['DEFAULT_PROMPT'] = '''
+You are a code quality expert. The following code has been flagged by SonarQube as having a code smell that needs to be fixed.
+
+Code smell details:
+- Rule: {rule}
+- Message: {message}
+- Severity: {severity}
+- Lines: {start_line}-{end_line}
+
+Please analyze the code and fix the identified code smell while maintaining the original functionality.
+
+Code lines to refactor::\n```java\n{{replace_code_smell_lines_here}}
+\n```\n\nComplete Code file::\n```java\n{{replace_full_code_here}}\n```\nFormat your output as only refactored java Code file
+
+Return only the corrected code without any explanations or markdown formatting.
+'''

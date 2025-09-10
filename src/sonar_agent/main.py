@@ -267,37 +267,24 @@ class SonarAgentApp:
                 rule = smell.rule
                 severity = smell.severity
                 
-                if severity == 'MINOR':
-                    if ":S" in rule:
-                        number = int(rule.split(":S")[1])
-                        prompt = rule_prompt_map.get('RSPEC-' + str(number))
-                    else:
-                        print(f"Rule {rule} does not contain ':S', skipping...")
-                        continue
-                
-                elif severity == 'MAJOR':
-                    # Handle MAJOR severity logic here
-                    continue
-                
-                elif severity == 'CRITICAL':
-                    # Handle CRITICAL severity logic here
-                    continue
-
-                elif severity == 'BLOCKER':
-                    # Handle BLOCKER severity logic here
-                    continue
-
+                # Extract rule number and get prompt for all severities
+                if ":S" in rule:
+                    number = int(rule.split(":S")[1])
+                    prompt = rule_prompt_map.get('RSPEC-' + str(number))
                 else:
-                    print(f"Unknown severity {severity} for rule {rule}, skipping...")
-                    continue
+                    print(f"Rule {rule} does not contain ':S', will use default prompt...")
+                    prompt = None
                 
             except Exception as e:
                 print(f"Error processing rule {rule}: {e}, skipping...")
                 continue
             
             if prompt is None:
-                print(f"No prompt found for rule {rule}, skipping...")
-                continue
+                print(f"No prompt found for rule {rule}, using default prompt...")
+                prompt = rule_prompt_map.get('DEFAULT_PROMPT')
+                if prompt is None:
+                    print(f"Default prompt not found, skipping...")
+                    continue
             # Get file content from Git client
             file_content = self._get_file_content(smell.file_path, config)
             if not file_content:
