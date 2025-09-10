@@ -124,8 +124,8 @@ class GitLabClient:
             
             return CommitResult(
                 success=True,
-                commit_id=commit.get('id'),
-                commit_url=f"{self.base_url}/{self.project.path_with_namespace}/-/commit/{commit.get('id')}"
+                commit_id=commit.id,
+                commit_url=f"{self.base_url}/{self.project.path_with_namespace}/-/commit/{commit.id}"
             )
             
         except gitlab.exceptions.GitlabError as e:
