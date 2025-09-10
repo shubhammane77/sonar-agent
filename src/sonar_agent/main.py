@@ -17,6 +17,7 @@ from .ai_client import AICodeFixer, TokenUsage
 from .gitlab_client import GitLabClient, GitLabBatchCommitter
 from .github_client import GitHubClient, GitHubBatchCommitter
 from .rule_prompt_map import rule_prompt_map
+from .issue_tracker import IssueTracker
 
 def load_env_file(env_path: str = ".env") -> Dict[str, str]:
     """Load environment variables from a .env file."""
@@ -76,6 +77,7 @@ class SonarAgentApp:
         self.github_client = None
         self.batch_committer = None
         self.working_branch = None
+        self.issue_tracker = IssueTracker()
 
     def create_working_branch(self, config):
         """Create a new working branch for commits."""
@@ -252,11 +254,20 @@ class SonarAgentApp:
 
     def _process_code_smells(self, smells, config):
         """Process each code smell and generate fixes."""
+        # Get current branch name for issue tracking
+        current_branch = self.working_branch or config.get('gitlab_branch') or config.get('github_branch') or 'main'
+        
+        # Filter out already fixed issues
+        unfixed_smells = self.issue_tracker.filter_unfixed_issues(smells, current_branch)
+        
+        if len(unfixed_smells) < len(smells):
+            print(f"📊 Processing {len(unfixed_smells)} unfixed issues out of {len(smells)} total issues")
+        
         results = []
         
-        for i, smell in enumerate(smells, 1):
+        for i, smell in enumerate(unfixed_smells, 1):
             print(smell)
-            print(f"\n--- Processing issue {i}/{len(smells)} ---")
+            print(f"\n--- Processing issue {i}/{len(unfixed_smells)} ---")
             print(f"File: {smell.file_path}")
             print(f"Message: {smell.message}")
             print(f"Lines: {smell.line}")
@@ -307,6 +318,15 @@ class SonarAgentApp:
             
             # Handle the fix (dry run or actual commit)
             result = self._handle_single_fix(smell, fixed_content, usage, config)
+            
+            # Mark issue as fixed if successful and not in dry run mode
+            if result.success and not config['dry_run']:
+                self.issue_tracker.mark_issue_fixed(
+                    smell, 
+                    current_branch, 
+                    file_content=fixed_content
+                )
+            
             results.append(result)
         
         return results
@@ -454,6 +474,10 @@ Please review the changes before merging.
         total_cost = sum(r.usage.cost_usd for r in results)
         total_tokens = sum(r.usage.total_tokens for r in results)
         
+        # Get current branch for statistics
+        current_branch = self.working_branch or 'main'
+        branch_stats = self.issue_tracker.get_branch_statistics(current_branch)
+        
         mode = "DRY RUN - " if dry_run else ""
         print(f"{mode}Issues processed: {len(results)}")
         print(f"{mode}Successfully fixed: {len(successful_fixes)}")
@@ -476,6 +500,17 @@ Please review the changes before merging.
             print(f"\nFAILED FIXES:")
             for result in failed_fixes:
                 print(f"- {result.smell.file_path}: {result.error}")
+        
+        # Issue tracking statistics
+        if branch_stats['total_fixed'] > 0:
+            print(f"\nISSUE TRACKING STATISTICS (Branch: {current_branch}):")
+            print(f"Total issues fixed in branch: {branch_stats['total_fixed']}")
+            print(f"Files affected: {branch_stats['files_affected']}")
+            print(f"Different rules fixed: {branch_stats['rules_fixed']}")
+            if branch_stats['first_fix']:
+                print(f"First fix: {branch_stats['first_fix']}")
+            if branch_stats['last_fix']:
+                print(f"Last fix: {branch_stats['last_fix']}")
         
         # GitLab integration summary
         if gitlab_enabled and self.batch_committer:
@@ -519,6 +554,9 @@ Please review the changes before merging.
             
             # Handle Git operations (commits, MRs/PRs)
             self._handle_git_operations(results, config)
+            
+            # Cleanup old database entries (older than 30 days)
+            self.issue_tracker.cleanup_old_entries(30)
             
             # Print summary report
             self._print_summary(results, config['dry_run'], config.get('gitlab_auto_commit', False))
