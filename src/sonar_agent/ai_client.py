@@ -67,8 +67,8 @@ class CostCalculator:
         return input_cost + output_cost
 
 
-class AICodeFixer:
-    """Handles AI API integration for fixing code smells with cost tracking."""
+class AIClient:
+    """Handles AI API integration with cost tracking and retry logic."""
     
     # Default API endpoints
     DEFAULT_ENDPOINTS = {
@@ -141,28 +141,13 @@ class AICodeFixer:
         
         return None
     
-    def fix_code_smell(self, smell, file_content: str, prompt_template: str) -> tuple[Optional[str], TokenUsage]:
-        """Send code smell to AI and get fixed version with usage tracking."""
+    def generate_completion(self, prompt: str) -> tuple[Optional[str], TokenUsage]:
+        """Generate AI completion for the given prompt with usage tracking."""
         if self.mock_mode:
-            return self._mock_ai_response(file_content, smell), TokenUsage()
-        
-        # Check if file content exceeds output token limit
-        file_tokens = self._estimate_tokens(file_content)
-        if file_tokens > self.max_output_tokens:
-            print(f"⚠️  File {smell.file_path} is too large ({file_tokens} tokens) for model output limit ({self.max_output_tokens} tokens)")
-            return None, TokenUsage()
+            return "Mock AI response", TokenUsage()
         
         try:
-            prompt = self._create_prompt(smell, file_content, prompt_template)
-            
-            # Also check total prompt size
-            prompt_tokens = self._estimate_tokens(prompt)
-            if prompt_tokens > (self.max_output_tokens * 2):  # Allow 2x for input vs output
-                print(f"⚠️  Prompt for {smell.file_path} is too large ({prompt_tokens} tokens)")
-                return None, TokenUsage()
-            
             return self._call_ai(prompt)
-            
         except Exception as e:
             print(f"Error calling AI API: {e}")
             return None, TokenUsage()
@@ -220,6 +205,9 @@ class AICodeFixer:
         # If all retries failed, return None with empty usage
         return None, TokenUsage()
     
+    def estimate_tokens(self, text: str) -> int:
+        """Estimate token count for text (public method)."""
+        return self._estimate_tokens(text)
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count for text."""
@@ -230,64 +218,6 @@ class AICodeFixer:
         except:
             # Fallback: rough approximation (4 chars per token)
             return len(text) // 4
-    
-    def _create_prompt(self, smell, file_content: str, prompt_template: str) -> str:
-        """Create a prompt for the AI to fix the code smell."""
-        print('prompt', smell.message)
-        print('prompt', file_content)
-        print('prompt', prompt_template)
-        prompt = prompt_template.replace(
-            "{{replace_code_smell_lines_here}}", smell.message
-        ).replace(
-            "{{replace_full_code_here}}", file_content
-        )
-        print('prompt', prompt)
-        return prompt
-#         return f"""
-# Please fix the following code smell in this file:
-
-# **Issue Description:** {smell.message}
-
-# **Current File line to change:**
-# ```
-# {line_content}
-# ```
-
-# **Current File Content:**
-
-# ```
-# {file_content}
-# ```
-
-# Instructions:
-# 1. Fix the code smell while preserving all existing functionality
-# 2. Follow best practices for the programming language
-# 3. Add comments if the fix needs explanation
-# 4. Return the ENTIRE updated file content
-# 5. Only send code
-# """
-    
-    def _extract_updated_file(self, ai_response: str) -> Optional[str]:
-        """Extract the updated file content from AI response."""
-        pattern = r'```java(.*?)```'
-        match = re.search(pattern, ai_response, re.DOTALL)
-        
-        if match:
-            return match.group(1).strip()
-        else:
-            print("Warning: Could not extract updated file from AI response")
-            return None
-    
-    def _mock_ai_response(self, file_content: str, smell) -> str:
-        """Mock AI response for demonstration purposes."""
-        lines = file_content.split('\n')
-        
-        # Add a comment indicating the smell was "fixed"
-        if smell.start_line <= len(lines):
-            comment = f"# FIXED: {smell.message} (Rule: {smell.rule})"
-            lines.insert(smell.start_line - 1, comment)
-        
-        return '\n'.join(lines)
     
     def get_total_usage(self) -> TokenUsage:
         """Get total token usage and cost for the session."""

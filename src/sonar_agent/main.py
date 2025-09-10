@@ -13,7 +13,8 @@ from typing import List, Optional, Dict
 from dataclasses import dataclass
 
 from .sonar_client import SonarQubeClient, CodeSmell
-from .ai_client import AICodeFixer, TokenUsage
+from .ai_client import AIClient, TokenUsage
+from .code_smell_processor import CodeSmellProcessor
 from .gitlab_client import GitLabClient, GitLabBatchCommitter
 from .github_client import GitHubClient, GitHubBatchCommitter
 from .rule_prompt_map import rule_prompt_map
@@ -72,7 +73,8 @@ class SonarAgentApp:
     def __init__(self):
         self.sonar_client = None
         self.repo_manager = None
-        self.ai_fixer = None
+        self.ai_client = None
+        self.code_smell_processor = None
         self.gitlab_client = None
         self.github_client = None
         self.batch_committer = None
@@ -174,7 +176,7 @@ class SonarAgentApp:
         
         # Initialize AI client
         if config['ai_api_key']:
-            self.ai_fixer = AICodeFixer(
+            self.ai_client = AIClient(
                 config['ai_provider'], 
                 config['ai_api_key'], 
                 config['ai_model'],
@@ -183,7 +185,12 @@ class SonarAgentApp:
             )
         else:
             print("Warning: No AI API key provided. Using mock responses.")
-            self.ai_fixer = AICodeFixer("mock")
+            self.ai_client = AIClient("mock")
+        
+        # Initialize code smell processor
+        self.code_smell_processor = CodeSmellProcessor(
+            config['ai_max_output_tokens']
+        )
         
         # Initialize Git clients (GitLab or GitHub)
         self.gitlab_client = None
@@ -306,12 +313,43 @@ class SonarAgentApp:
                 print(f"Skipping - could not read file: {smell.file_path}")
                 continue
             
-            # Fix with AI
-            fixed_content, usage = self.ai_fixer.fix_code_smell(smell, file_content, prompt)
-            if not fixed_content:
-                result = FixResult(smell, False, usage, "AI could not fix the issue")
+            # Validate file size before processing
+            file_size_error = self.code_smell_processor.validate_file_size(file_content, self.ai_client.estimate_tokens)
+            if file_size_error:
+                result = FixResult(smell, False, TokenUsage(), f"File {smell.file_path}: {file_size_error}")
                 results.append(result)
-                print(f"Skipping - AI could not fix the issue")
+                print(f"⚠️  Skipping - {file_size_error}")
+                continue
+            
+            # Create formatted prompt
+            formatted_prompt = self.code_smell_processor.create_prompt(smell, file_content, prompt)
+            
+            # Validate prompt size
+            prompt_size_error = self.code_smell_processor.validate_prompt_size(formatted_prompt, self.ai_client.estimate_tokens)
+            if prompt_size_error:
+                result = FixResult(smell, False, TokenUsage(), f"Prompt for {smell.file_path}: {prompt_size_error}")
+                results.append(result)
+                print(f"⚠️  Skipping - {prompt_size_error}")
+                continue
+            
+            # Call AI client directly
+            if self.ai_client.mock_mode:
+                ai_response = self.code_smell_processor.create_mock_response(file_content, smell)
+                usage = TokenUsage()
+            else:
+                ai_response, usage = self.ai_client.generate_completion(formatted_prompt)
+                if not ai_response:
+                    result = FixResult(smell, False, usage, "AI could not generate a response")
+                    results.append(result)
+                    print(f"Skipping - AI could not generate a response")
+                    continue
+            
+            # Extract fixed content from AI response
+            fixed_content = self.code_smell_processor.extract_updated_file(ai_response)
+            if not fixed_content:
+                result = FixResult(smell, False, usage, "Could not extract fixed code from AI response")
+                results.append(result)
+                print(f"Skipping - Could not extract fixed code from AI response")
                 continue
             
             # Display cost information
