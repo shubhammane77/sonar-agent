@@ -186,5 +186,6 @@ Please analyze the code and fix the identified code smell while maintaining the 
 Code lines to refactor::\n```java\n{{replace_code_smell_lines_here}}
 \n```\n\nComplete Code file::\n```java\n{{replace_full_code_here}}\n```\nFormat your output as only refactored java Code file
 
+Make sure existing logic is not changed.
 Return only the corrected code without any explanations or markdown formatting.
 '''

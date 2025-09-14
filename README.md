@@ -8,7 +8,7 @@ AI-powered SonarQube code smell fixer with cost tracking using Mistral AI and La
 - **Mistral AI Powered**: Use Mistral AI models via LangChain for intelligent code fixes
 - **Cost Tracking**: Real-time token usage and cost calculation for each fix
 - **Technical Debt Analysis**: Calculate cost per minute of technical debt saved
-- **GitLab Repository Support**: Work with GitLab repositories via official python-gitlab library
+- **Multi-Platform Git Support**: Work with GitLab, GitHub repositories
 - **Flexible Filtering**: Filter by project or specific pull requests
 - **Smart Prioritization**: Sort issues by effort/technical debt
 - **Safe Operations**: Automatic file backups and dry-run mode

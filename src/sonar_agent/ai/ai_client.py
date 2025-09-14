@@ -205,6 +205,40 @@ class AIClient:
         # If all retries failed, return None with empty usage
         return None, TokenUsage()
     
+    def _extract_updated_file(self, ai_response: str) -> Optional[str]:
+        """Extract the updated file content from AI response."""
+        # Try to extract code from markdown code blocks
+        patterns = [
+            r'```java(.*?)```',
+            r'```python(.*?)```',
+            r'```javascript(.*?)```',
+            r'```typescript(.*?)```',
+            r'```cpp(.*?)```',
+            r'```c\+\+(.*?)```',
+            r'```csharp(.*?)```',
+            r'```go(.*?)```',
+            r'```rust(.*?)```',
+            r'```php(.*?)```',
+            r'```ruby(.*?)```',
+            r'```scala(.*?)```',
+            r'```kotlin(.*?)```',
+            r'```swift(.*?)```',
+            r'```(.*?)```'  # Generic code block as fallback
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, ai_response, re.DOTALL)
+            if match:
+                return match.group(1).strip()
+        
+        # If no code blocks found, return the entire response (might be plain code)
+        # But first check if it looks like code vs explanation
+        lines = ai_response.strip().split('\n')
+        if len(lines) > 1 and not any(line.lower().startswith(('here', 'the', 'i ', 'this')) for line in lines[:3]):
+            return ai_response.strip()
+        
+        return None
+
     def estimate_tokens(self, text: str) -> int:
         """Estimate token count for text (public method)."""
         return self._estimate_tokens(text)

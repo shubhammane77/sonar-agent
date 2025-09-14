@@ -12,13 +12,12 @@ from datetime import datetime
 from typing import List, Optional, Dict
 from dataclasses import dataclass
 
-from .sonar_client import SonarQubeClient, CodeSmell
-from .ai_client import AIClient, TokenUsage
-from .code_smell_processor import CodeSmellProcessor
-from .gitlab_client import GitLabClient, GitLabBatchCommitter
-from .github_client import GitHubClient, GitHubBatchCommitter
-from .rule_prompt_map import rule_prompt_map
-from .issue_tracker import IssueTracker
+from .sonar.sonar_client import SonarQubeClient, CodeSmell
+from .ai.ai_client import AIClient, TokenUsage
+from .sonar.code_smell_processor import CodeSmellProcessor
+from .git.gitlab_client import GitLabClient, GitLabBatchCommitter
+from .sonar.rule_prompt_map import rule_prompt_map
+from .sonar.issue_tracker import IssueTracker
 
 def load_env_file(env_path: str = ".env") -> Dict[str, str]:
     """Load environment variables from a .env file."""
@@ -195,7 +194,6 @@ class SonarAgentApp:
         # Initialize Git clients (GitLab or GitHub)
         self.gitlab_client = None
         self.github_client = None
-        self.batch_committer = None
         
         # GitLab integration
         if (config['gitlab_url'] and config['gitlab_token'] and 
@@ -205,11 +203,7 @@ class SonarAgentApp:
                 config['gitlab_token'], 
                 config['gitlab_project_id']
             )
-            self.batch_committer = GitLabBatchCommitter(
-                self.gitlab_client, 
-                config['gitlab_batch_size']
-            )
-            print(f"✅ GitLab integration enabled (batch size: {config['gitlab_batch_size']})")
+            print(f"✅ GitLab integration enabled (individual commits)")
             
             # Verify GitLab connection
             project_info = self.gitlab_client.get_project_info()
@@ -220,20 +214,14 @@ class SonarAgentApp:
         
         # GitHub integration (alternative to GitLab)
         elif (config['github_url'] and config['github_token'] and 
-              config['github_repo_owner'] and config['github_repo_name']):
+              config['github_owner'] and config['github_repo']):
             self.github_client = GitHubClient(
-                config['github_url'], 
-                config['github_token'], 
-                config['github_repo_owner'], 
-                config['github_repo_name'], 
-                debug=config['debug']
+                config['github_url'],
+                config['github_token'],
+                config['github_owner'],
+                config['github_repo']
             )
-            self.batch_committer = GitHubBatchCommitter(
-                self.github_client, 
-                config['github_batch_size'], 
-                debug=config['debug']
-            )
-            print(f"✅ GitHub integration enabled (batch size: {config['github_batch_size']})")
+            print(f"✅ GitHub integration enabled (individual commits)")
             
             # Verify GitHub connection
             repo_info = self.github_client.get_repository_info()
@@ -376,44 +364,26 @@ class SonarAgentApp:
         # Always read from the main branch (not the working branch)
         # This ensures we're getting the original files before any fixes
         if self.gitlab_client:
-            return self.gitlab_client.get_file_content(file_path, config['gitlab_branch'])
+            return self.gitlab_client.get_file_content(file_path, self.working_branch)
         elif self.github_client:
-            return self.github_client.get_file_content(file_path, config['github_branch'])
+            return self.github_client.get_file_content(file_path, self.working_branch)
         return None
 
     def _handle_single_fix(self, smell, fixed_content, usage, config):
-        """Handle a single fix - either dry run or actual commit."""
+        """Handle a single fix - either dry run or commit immediately."""
         if config['dry_run']:
             print(f"[DRY RUN] Would update file: {smell.file_path}")
             return FixResult(smell, True, usage)
         
-        # Create working branch if not already created
+        # Working branch should already be created at this point
         if not self.working_branch:
-            if not self.create_working_branch(config):
-                return FixResult(smell, False, usage, "Failed to create working branch")
+            return FixResult(smell, False, usage, "No working branch available")
         
-        # Add to batch committer if available
-        if self.batch_committer:
-            self.batch_committer.add_file(smell.file_path, fixed_content)
-            
-            # Check if we should commit this batch
-            if self.batch_committer.should_commit():
-                commit_result = self.batch_committer.commit_batch(self.working_branch)
-                if not commit_result.success:
-                    print(f"⚠️  Batch commit failed: {commit_result.error}")
-            
-            return FixResult(smell, True, usage)
-        
-        # Direct commit if no batch committer
+        # Commit each fix immediately
         return self._direct_commit_fix(smell, fixed_content, usage, config)
 
     def _direct_commit_fix(self, smell, fixed_content, usage, config):
         """Commit a single fix directly to the repository."""
-        # Create working branch if not already created
-        if not self.working_branch:
-            if not self.create_working_branch(config):
-                return FixResult(smell, False, usage, "Failed to create working branch")
-        
         commit_message = f"Sonar Agent: Fix code smell in {smell.file_path}"
         
         if self.gitlab_client:
@@ -429,48 +399,44 @@ class SonarAgentApp:
         
         if commit_result.success:
             print(f"✅ Committed fix for: {smell.file_path}")
+            # Mark issue as fixed in the tracker
+            self.issue_tracker.mark_issue_fixed(
+                smell, 
+                self.working_branch, 
+                commit_result.commit_id if hasattr(commit_result, 'commit_id') else None,
+                fixed_content
+            )
             return FixResult(smell, True, usage)
         else:
             return FixResult(smell, False, usage, f"Failed to commit: {commit_result.error}")
 
-    def _handle_git_operations(self, results, config):
-        """Handle remaining Git operations like final commits and MR/PR creation."""
-        if not self.batch_committer or config['dry_run'] or not self.working_branch:
+    def _handle_git_operations(self, results: List[FixResult], config):
+        """Handle final Git operations like creating MRs/PRs."""
+        if config['dry_run']:
             return
         
-        # Commit any remaining files in the batch
-        remaining_result = self.batch_committer.commit_remaining(self.working_branch)
-        if remaining_result and not remaining_result.success:
-            print(f"⚠️  Final batch commit failed: {remaining_result.error}")
+        # Count successful fixes
+        successful_fixes = sum(1 for result in results if result.success)
         
-        # Create merge/pull request if requested
+        # Create merge/pull request if requested and we have successful fixes
         if ((config['gitlab_create_mr'] or config['github_create_pr']) and 
-            self.batch_committer.commit_count > 0):
+            successful_fixes > 0):
             self._create_merge_or_pull_request(results, config)
 
     def _create_merge_or_pull_request(self, results, config):
-        """Create a merge request (GitLab) or pull request (GitHub)."""
-        if not self.working_branch:
-            print("⚠️  No working branch available for creating merge/pull request")
-            return
-            
+        """Create merge request or pull request based on the Git client."""
+        # Count successful fixes for the description
         successful_fixes = [r for r in results if r.success]
         
-        # Prepare description
-        description = f"""
-Automated code smell fixes generated by Sonar Agent.
-
-**Summary:**
-- Fixed {len(successful_fixes)} code smells
-- Total commits: {self.batch_committer.commit_count}
-- Technical debt reduced: {sum(r.smell.debt_minutes for r in successful_fixes)} minutes
-
-**Cost Analysis:**
-- Total AI cost: ${sum(r.usage.cost_usd for r in results):.4f}
-- Total tokens: {sum(r.usage.total_tokens for r in results):,}
-
-Please review the changes before merging.
-"""
+        # Create description
+        description = f"Automated code smell fixes by Sonar Agent\n\n"
+        description += f"Fixed {len(successful_fixes)} code smell(s) with individual commits:\n\n"
+        
+        for result in successful_fixes[:10]:  # Show first 10 fixes
+            description += f"- {result.smell.rule}: {result.smell.file_path}\n"
+        
+        if len(successful_fixes) > 10:
+            description += f"... and {len(successful_fixes) - 10} more fixes\n"
         
         if self.gitlab_client:
             self._create_gitlab_mr(self.working_branch, description, config)
@@ -479,7 +445,8 @@ Please review the changes before merging.
 
     def _create_gitlab_mr(self, branch_name, description, config):
         """Create a GitLab merge request."""
-        title = f"Sonar Agent: Automated code smell fixes ({self.batch_committer.commit_count} batches)"
+        successful_fixes = len([r for r in self.processed_results if r.success]) if hasattr(self, 'processed_results') else 0
+        title = f"Sonar Agent: Automated code smell fixes ({successful_fixes} fixes)"
         mr_result = self.gitlab_client.create_merge_request(
             branch_name, config['gitlab_branch'], title, description
         )
@@ -491,7 +458,8 @@ Please review the changes before merging.
 
     def _create_github_pr(self, branch_name, description, config):
         """Create a GitHub pull request."""
-        title = f"Sonar Agent: Automated code smell fixes ({self.batch_committer.commit_count} batches)"
+        successful_fixes = len([r for r in self.processed_results if r.success]) if hasattr(self, 'processed_results') else 0
+        title = f"Sonar Agent: Automated code smell fixes ({successful_fixes} fixes)"
         pr_result = self.github_client.create_pull_request(
             branch_name, config['github_branch'], title, description
         )
@@ -583,16 +551,19 @@ Please review the changes before merging.
             if not smells:
                 return
                 
-            # Create a working branch if we're not in dry run mode and have a Git client
+            # Create a working branch first if we're not in dry run mode and have a Git client
             if not config['dry_run'] and (self.gitlab_client or self.github_client):
-                # We'll create the branch on demand when the first fix is ready
-                # This avoids creating empty branches if no fixes are made
-                pass
+                if not self.create_working_branch(config):
+                    print("⚠️  Failed to create working branch, aborting")
+                    return
             
             # Process each smell and generate fixes
             results = self._process_code_smells(smells, config)
             
-            # Handle Git operations (commits, MRs/PRs)
+            # Store results for MR/PR creation
+            self.processed_results = results
+            
+            # Handle Git operations (MRs/PRs)
             self._handle_git_operations(results, config)
             
             # Cleanup old database entries (older than 30 days)

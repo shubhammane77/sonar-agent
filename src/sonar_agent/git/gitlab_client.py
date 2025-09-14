@@ -88,6 +88,43 @@ class GitLabClient:
             print(f"Error creating branch {branch_name}: {e}")
             return False
     
+    def update_file(self, file_path: str, content: str, commit_message: str,
+                   branch: str = "main", author_email: Optional[str] = None,
+                   author_name: Optional[str] = None) -> CommitResult:
+        """Update a single file with a commit to GitLab."""
+        # Prepare single file action
+        action = {
+            'action': 'update',
+            'file_path': file_path,
+            'content': content
+        }
+        
+        # Prepare commit data
+        commit_data = {
+            'branch': branch,
+            'commit_message': commit_message,
+            'actions': [action]
+        }
+        
+        if author_email:
+            commit_data['author_email'] = author_email
+        if author_name:
+            commit_data['author_name'] = author_name
+        
+        try:
+            # Use the commits API to create a commit with single file action
+            commit = self.project.commits.create(commit_data)
+            
+            return CommitResult(
+                success=True,
+                commit_id=commit.id,
+                commit_url=f"{self.base_url}/{self.project.path_with_namespace}/-/commit/{commit.id}"
+            )
+            
+        except gitlab.exceptions.GitlabError as e:
+            error_msg = f"Error committing to GitLab: {e}"
+            return CommitResult(success=False, error=error_msg)
+    
     def batch_commit(self, files: List[GitLabFile], commit_message: str, 
                     branch: str = "main", author_email: Optional[str] = None,
                     author_name: Optional[str] = None) -> CommitResult:
