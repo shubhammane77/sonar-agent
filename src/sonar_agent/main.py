@@ -11,6 +11,7 @@ import sys
 from datetime import datetime
 from typing import List, Optional, Dict
 from dataclasses import dataclass
+import time
 
 from .sonar.sonar_client import SonarQubeClient, CodeSmell
 from .ai.ai_client import AIClient, TokenUsage
@@ -469,7 +470,7 @@ class SonarAgentApp:
         else:
             print("⚠️  Failed to create pull request")
     
-    def _print_summary(self, results: List[FixResult], dry_run: bool, gitlab_enabled: bool = False):
+    def _print_summary(self, results: List[FixResult], dry_run: bool, gitlab_enabled: bool = False, total_time: float = None):
         """Print summary report with cost analysis."""
         print(f"\n{'='*60}")
         print("SUMMARY REPORT")
@@ -485,13 +486,14 @@ class SonarAgentApp:
         # Get current branch for statistics
         current_branch = self.working_branch or 'main'
         branch_stats = self.issue_tracker.get_branch_statistics(current_branch)
-        
+
         mode = "DRY RUN - " if dry_run else ""
         print(f"{mode}Issues processed: {len(results)}")
         print(f"{mode}Successfully fixed: {len(successful_fixes)}")
         print(f"{mode}Failed: {len(failed_fixes)}")
         print(f"{mode}Technical debt reduced: {total_debt_minutes} minutes ({total_debt_minutes/60:.1f} hours)")
-        
+        print(f"{mode}Total time taken: {total_time:.2f} seconds")
+
         if total_cost > 0:
             print(f"\nAI COST ANALYSIS:")
             print(f"Total tokens used: {total_tokens:,}")
@@ -542,6 +544,7 @@ class SonarAgentApp:
             print("\nRe-run without --dry-run to apply the changes")
     def run(self, args):
         """Main entry point."""
+        start_time = time.time()
         try:
             config = self._load_configuration(args)
             self._initialize_clients(config)
@@ -570,7 +573,9 @@ class SonarAgentApp:
             self.issue_tracker.cleanup_old_entries(30)
             
             # Print summary report
-            self._print_summary(results, config['dry_run'], config.get('gitlab_auto_commit', False))
+            end_time = time.time()
+            total_time = end_time - start_time
+            self._print_summary(results, config['dry_run'], config.get('gitlab_auto_commit', False), total_time)
             
         except Exception as e:
             print(f"Error: {e}")

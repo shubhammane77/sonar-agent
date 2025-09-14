@@ -10,7 +10,7 @@ from typing import List, Optional, Set
 from dataclasses import dataclass
 from pathlib import Path
 
-from sonar_client import CodeSmell
+from .sonar_client import CodeSmell
 
 
 @dataclass
