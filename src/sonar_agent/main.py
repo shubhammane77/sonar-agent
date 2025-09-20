@@ -276,6 +276,8 @@ class SonarAgentApp:
                 rule = smell.rule
                 severity = smell.severity
                 
+                if "S1134" in smell.rule or "S118" in smell.rule or "S1135" in smell.rule or "NM_CLASS_NAMING_CONVENTION" in smell.rule:
+                    continue
                 # Extract rule number and get prompt for all severities
                 if ":S" in rule:
                     number = int(rule.split(":S")[1])

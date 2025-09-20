@@ -33,3 +33,5 @@ Thumbs.db
 
 uv.lock
 *.db
+rollback_architecture.md
+lsp.md

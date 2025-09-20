@@ -223,6 +223,7 @@ class AIClient:
             r'```scala(.*?)```',
             r'```kotlin(.*?)```',
             r'```swift(.*?)```',
+            r'```xml(.*?)```',
             r'```(.*?)```'  # Generic code block as fallback
         ]
         
